@@ -1,0 +1,11 @@
+[package]
+name = "display-data-channel"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "^1.0"
+clap = { version = "^4.6", features = ["derive"] }
+crossterm = "^0.29"
+ddc-hi = "^0.4"
+ratatui = "^0.30"
