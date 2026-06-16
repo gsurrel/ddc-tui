@@ -12,7 +12,7 @@ use crossterm::{
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
 
-use crate::app::{App, FocusedElement};
+use crate::app::{App, FocusArea};
 
 #[derive(Parser, Debug)]
 #[command(name = "ddc-tui")]
@@ -47,7 +47,6 @@ fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new()?;
-
     let res = run_app(&mut terminal, &mut app);
 
     disable_raw_mode()?;
@@ -66,10 +65,9 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-// Add Send + Sync + 'static bounds to B::Error to satisfy anyhow
 fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()>
 where
-    B::Error: Send + Sync + 'static, // FIXES THE LIFETIME ERROR
+    B::Error: Send + Sync + 'static,
 {
     while app.running {
         terminal.draw(|f| ui::draw(f, app))?;
@@ -82,40 +80,52 @@ where
 
                 match key.code {
                     KeyCode::Char('q') => app.running = false,
-                    KeyCode::Char('r') => app.refresh_values(),
-                    KeyCode::Up => match app.focused_element {
-                        FocusedElement::MonitorList => {
+                    KeyCode::Char('r') => app.refresh_features(),
+                    KeyCode::Tab => {
+                        app.focus_area = match app.focus_area {
+                            FocusArea::MonitorList => FocusArea::VcpFeatures,
+                            FocusArea::VcpFeatures => FocusArea::MonitorList,
+                        };
+                    }
+                    KeyCode::Up => match app.focus_area {
+                        FocusArea::MonitorList => {
                             if app.selected_monitor_idx > 0 {
                                 app.selected_monitor_idx -= 1;
-                                app.refresh_values();
+                                app.selected_vcp_idx = 0;
+                                app.refresh_features();
                             }
                         }
-                        FocusedElement::Brightness => {
-                            app.focused_element = FocusedElement::MonitorList
-                        }
-                        FocusedElement::Contrast => {
-                            app.focused_element = FocusedElement::Brightness
+                        FocusArea::VcpFeatures => {
+                            if app.selected_vcp_idx > 0 {
+                                app.selected_vcp_idx -= 1;
+                            }
                         }
                     },
-                    KeyCode::Down => match app.focused_element {
-                        FocusedElement::MonitorList => {
-                            app.focused_element = FocusedElement::Brightness
+                    KeyCode::Down => match app.focus_area {
+                        FocusArea::MonitorList => {
+                            if app.selected_monitor_idx + 1 < app.monitors.len() {
+                                app.selected_monitor_idx += 1;
+                                app.selected_vcp_idx = 0;
+                                app.refresh_features();
+                            }
                         }
-                        FocusedElement::Brightness => {
-                            app.focused_element = FocusedElement::Contrast
+                        FocusArea::VcpFeatures => {
+                            let max_idx = app.monitors[app.selected_monitor_idx].features.len();
+                            if app.selected_vcp_idx + 1 < max_idx {
+                                app.selected_vcp_idx += 1;
+                            }
                         }
-                        FocusedElement::Contrast => {}
                     },
-                    KeyCode::Left => match app.focused_element {
-                        FocusedElement::Brightness => app.adjust_brightness(-5),
-                        FocusedElement::Contrast => app.adjust_contrast(-5),
-                        _ => {}
-                    },
-                    KeyCode::Right => match app.focused_element {
-                        FocusedElement::Brightness => app.adjust_brightness(5),
-                        FocusedElement::Contrast => app.adjust_contrast(5),
-                        _ => {}
-                    },
+                    KeyCode::Left => {
+                        if app.focus_area == FocusArea::VcpFeatures {
+                            app.adjust_selected_feature(-1);
+                        }
+                    }
+                    KeyCode::Right => {
+                        if app.focus_area == FocusArea::VcpFeatures {
+                            app.adjust_selected_feature(1);
+                        }
+                    }
                     _ => {}
                 }
             }
