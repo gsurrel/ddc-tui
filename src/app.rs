@@ -2,6 +2,7 @@ use crate::db::{BASE_CONTROLS, MONITOR_PROFILES};
 use crate::ddc::DdcController;
 use anyhow::Result;
 use ddc_hi::FeatureCode;
+use std::collections::HashSet;
 
 #[derive(Clone)]
 pub struct VcpFeatureInfo {
@@ -21,6 +22,7 @@ pub struct MonitorInfo {
     pub manufacturer_id: Option<String>,
     pub model_id: Option<u16>,
     pub features: Vec<VcpFeatureInfo>,
+    pub profile_chain: Vec<String>, // Traced inheritance chain
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -52,6 +54,7 @@ impl App {
                 manufacturer_id: d.manufacturer_id,
                 model_id: d.model_id,
                 features: Vec::new(),
+                profile_chain: Vec::new(),
             })
             .collect();
 
@@ -90,7 +93,6 @@ impl App {
             None => return,
         };
 
-        // Heuristic: Exact Match -> Manufacturer LCD -> VESA
         let exact_pnp = match (&m.manufacturer_id, m.model_id) {
             (Some(mfr), Some(model)) => format!("{}{:04X}", mfr, model),
             _ => String::new(),
@@ -100,34 +102,86 @@ impl App {
             None => String::new(),
         };
 
-        let profile = MONITOR_PROFILES
-            .iter()
-            .find(|p| p.pnp_name == exact_pnp)
-            .or_else(|| MONITOR_PROFILES.iter().find(|p| p.pnp_name == mfr_lcd))
-            .or_else(|| MONITOR_PROFILES.iter().find(|p| p.pnp_name == "VESA"))
-            .unwrap();
+        // 1. Trace Profile Chain
+        let mut chain = Vec::new();
+        let mut matched_profile = None;
+        let candidates = [exact_pnp.as_str(), mfr_lcd.as_str(), "VESA"];
+
+        for cand in candidates {
+            if cand.is_empty() {
+                continue;
+            }
+            if let Some(p) = MONITOR_PROFILES.iter().find(|p| p.pnp_name == cand) {
+                matched_profile = Some(p);
+                chain.push(p.pnp_name.to_string());
+
+                // Recursively trace <include> tags
+                let mut queue: Vec<&str> = p.includes.iter().map(|s| *s).collect();
+                while let Some(inc) = queue.pop() {
+                    if !chain.contains(&inc.to_string()) {
+                        chain.push(inc.to_string());
+                        if let Some(inc_p) = MONITOR_PROFILES.iter().find(|p| p.pnp_name == inc) {
+                            queue.extend(inc_p.includes.iter().map(|s| *s));
+                        }
+                    }
+                }
+                break;
+            }
+        }
+
+        let profile = matched_profile.unwrap_or_else(|| {
+            let p = MONITOR_PROFILES
+                .iter()
+                .find(|p| p.pnp_name == "VESA")
+                .unwrap();
+            chain.push(p.pnp_name.to_string());
+            p
+        });
+
+        // 2. Build HashSet of explicitly supported Control IDs to avoid I2C timeouts
+        let mut supported_ids = HashSet::new();
+        for pnp in &chain {
+            if let Some(p) = MONITOR_PROFILES.iter().find(|prof| prof.pnp_name == pnp) {
+                for o in p.overrides {
+                    supported_ids.insert(o.control_id);
+                }
+            }
+        }
 
         let mut features = Vec::new();
+
+        // Enumerate displays EXACTLY ONCE per refresh
+        let mut display = match self.ddc.find_display(&m.id) {
+            Ok(d) => d,
+            Err(_) => return,
+        };
+
+        // 3. Probe ONLY supported features
         for base_ctrl in BASE_CONTROLS {
-            let override_opt = profile
-                .overrides
-                .iter()
-                .find(|o| o.control_id == base_ctrl.id);
-            let address = override_opt
-                .and_then(|o| o.address_override)
-                .unwrap_or(base_ctrl.address);
+            if !supported_ids.contains(base_ctrl.id) {
+                continue;
+            }
 
-            let resolved_values = if let Some(o) = override_opt {
-                if !o.values.is_empty() {
-                    o.values
-                } else {
-                    base_ctrl.default_values
+            let mut resolved_addr = base_ctrl.address;
+            let mut resolved_values = base_ctrl.default_values;
+
+            // Apply most specific override from the chain
+            for pnp in &chain {
+                if let Some(p) = MONITOR_PROFILES.iter().find(|prof| prof.pnp_name == pnp) {
+                    if let Some(o) = p.overrides.iter().find(|o| o.control_id == base_ctrl.id) {
+                        if let Some(addr) = o.address_override {
+                            resolved_addr = addr;
+                        }
+                        if !o.values.is_empty() {
+                            resolved_values = o.values;
+                        }
+                        break;
+                    }
                 }
-            } else {
-                base_ctrl.default_values
-            };
+            }
 
-            if let Ok((cur, max)) = self.ddc.read_feature(&m.id, address) {
+            // Fast I2C read using cached handle
+            if let Ok((cur, max)) = DdcController::read_feature(&mut display, resolved_addr) {
                 let mut options = Vec::new();
                 let mut option_values = Vec::new();
                 let is_discrete = !resolved_values.is_empty() || max <= 4;
@@ -145,7 +199,7 @@ impl App {
                 }
 
                 features.push(VcpFeatureInfo {
-                    code: address,
+                    code: resolved_addr,
                     name: base_ctrl.name.to_string(),
                     current: cur,
                     max,
@@ -155,8 +209,10 @@ impl App {
                 });
             }
         }
+
         if let Some(mon) = self.monitors.get_mut(monitor_idx) {
             mon.features = features;
+            mon.profile_chain = chain;
         }
         self.set_status(&format!("Loaded profile: {}", profile.display_name));
     }
@@ -170,7 +226,7 @@ impl App {
         };
 
         let (current, max, code, name, is_discrete, option_values) = {
-            let feature_ref = match self
+            let f = match self
                 .monitors
                 .get(monitor_idx)
                 .and_then(|m| m.features.get(vcp_idx))
@@ -179,12 +235,12 @@ impl App {
                 None => return,
             };
             (
-                feature_ref.current,
-                feature_ref.max,
-                feature_ref.code,
-                feature_ref.name.clone(),
-                feature_ref.is_discrete,
-                feature_ref.option_values.clone(),
+                f.current,
+                f.max,
+                f.code,
+                f.name.clone(),
+                f.is_discrete,
+                f.option_values.clone(),
             )
         };
 
@@ -215,13 +271,19 @@ impl App {
             return;
         }
 
-        if self.ddc.write_feature(&id, code, final_val).is_ok() {
-            if let Some(feature_mut) = self
+        // Enumerate exactly once per adjustment
+        let mut display = match self.ddc.find_display(&id) {
+            Ok(d) => d,
+            Err(_) => return,
+        };
+
+        if DdcController::write_feature(&mut display, code, final_val).is_ok() {
+            if let Some(f_mut) = self
                 .monitors
                 .get_mut(monitor_idx)
                 .and_then(|m| m.features.get_mut(vcp_idx))
             {
-                feature_mut.current = final_val;
+                f_mut.current = final_val;
             }
             self.set_status(&format!("Set {} to {}", name, final_val));
         } else {

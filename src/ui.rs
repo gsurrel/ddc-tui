@@ -7,7 +7,6 @@ use ratatui::{
     widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap},
 };
 
-/// Top-level draw entry
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
     if area.width < 40 || area.height < 10 {
@@ -19,16 +18,14 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         frame.render_widget(p, area);
         return;
     }
-
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Title
-            Constraint::Min(6),    // Body (left + right)
-            Constraint::Length(4), // Merged Status Controls
+            Constraint::Length(3),
+            Constraint::Min(6),
+            Constraint::Length(4),
         ])
         .split(area);
-
     draw_title(frame, main_chunks[0]);
     draw_body(frame, main_chunks[1], app);
     draw_status_controls(frame, main_chunks[2], app);
@@ -92,16 +89,21 @@ fn draw_monitor_list(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(list, area);
 }
 
-/// Right column: selected monitor block title includes the monitor name
 fn draw_monitor_controls(frame: &mut Frame, area: Rect, app: &mut App) {
-    let monitor_name = app
-        .monitors
-        .get(app.selected_monitor_idx)
-        .map(|m| m.name.clone())
-        .unwrap_or_else(|| "<no monitor>".into());
-    let outer = Block::default()
-        .borders(Borders::ALL)
-        .title(format!("Selected Monitor: {}", monitor_name));
+    let monitor_idx = app.selected_monitor_idx;
+    let (monitor_name, profile_chain) = match app.monitors.get(monitor_idx) {
+        Some(m) => (m.name.clone(), m.profile_chain.clone()),
+        None => ("<no monitor>".to_string(), Vec::new()),
+    };
+
+    let chain_str = profile_chain.join(" -> ");
+    let block_title = if chain_str.is_empty() {
+        format!("Selected Monitor: {}", monitor_name)
+    } else {
+        format!("Selected Monitor: {} ({})", monitor_name, chain_str)
+    };
+
+    let outer = Block::default().borders(Borders::ALL).title(block_title);
     frame.render_widget(outer, area);
     let inner = Rect {
         x: area.x + 1,
@@ -124,7 +126,6 @@ fn draw_monitor_controls(frame: &mut Frame, area: Rect, app: &mut App) {
     draw_compact_features(frame, inner, app, &features);
 }
 
-/// Render a horizontal sequence of "pills" (small selectable labels).
 fn render_pills(area: Rect, options: &'_ [String], selected: usize, is_focused: bool) -> Line<'_> {
     let mut spans: Vec<Span> = Vec::new();
     let mut used = 0usize;
@@ -133,7 +134,6 @@ fn render_pills(area: Rect, options: &'_ [String], selected: usize, is_focused: 
     for (i, opt) in options.iter().enumerate() {
         let pill_text = format!(" {} ", opt);
         let pill_len = pill_text.len();
-
         let sep = if first { 0 } else { 1 };
         if used + sep + pill_len > max_width.saturating_sub(3) {
             if !first {
@@ -142,12 +142,10 @@ fn render_pills(area: Rect, options: &'_ [String], selected: usize, is_focused: 
             spans.push(Span::styled("…", Style::default().fg(Color::Gray)));
             break;
         }
-
         if !first {
             spans.push(Span::raw(" "));
             used += 1;
         }
-
         let style = if i == selected {
             if is_focused {
                 Style::default()
@@ -160,16 +158,13 @@ fn render_pills(area: Rect, options: &'_ [String], selected: usize, is_focused: 
         } else {
             Style::default().fg(Color::White).bg(Color::DarkGray)
         };
-
         spans.push(Span::styled(pill_text, style));
         used += pill_len;
         first = false;
     }
-
     Line::from(spans)
 }
 
-/// Compact label:gauge layout for features with discrete handling and pill selectors
 fn draw_compact_features(
     frame: &mut Frame,
     area: Rect,
@@ -200,12 +195,9 @@ fn draw_compact_features(
 
     for (i, feature) in features_to_draw.iter().enumerate() {
         let row = rows[i];
-
         if row.width < 10 {
             continue;
         }
-
-        // label/gauge split
         let mut label_width = (row.width as f32 * 0.35).max(12.0) as u16;
         if label_width + 6 >= row.width {
             label_width = row.width.saturating_sub(6);
@@ -217,16 +209,13 @@ fn draw_compact_features(
 
         let is_focused = app.focus_area == FocusArea::VcpFeatures && i == app.selected_vcp_idx;
         let label_text = if feature.is_discrete {
-            // For discrete, show name only (value shown as pills)
             format!("{}", feature.name)
         } else {
-            // For continuous label shows current/max
             format!(
                 "{} (0x{:02X}): {}/{}",
                 feature.name, feature.code, feature.current, feature.max
             )
         };
-
         let label_style = if is_focused {
             Style::default()
                 .fg(Color::Yellow)
@@ -234,14 +223,12 @@ fn draw_compact_features(
         } else {
             Style::default().fg(Color::White)
         };
-
         frame.render_widget(
             Paragraph::new(Line::from(vec![Span::styled(label_text, label_style)])),
             cols[0],
         );
 
         if feature.is_discrete {
-            // Build option labels and selected index
             let selected_idx = feature
                 .option_values
                 .iter()
@@ -267,7 +254,6 @@ fn draw_compact_features(
             } else {
                 Color::Green
             });
-
             frame.render_widget(
                 Gauge::default()
                     .gauge_style(gauge_style.add_modifier(if is_focused {
@@ -283,7 +269,6 @@ fn draw_compact_features(
     }
 }
 
-/// Status + Controls block
 fn draw_status_controls(frame: &mut Frame, area: Rect, app: &App) {
     let outer = Block::default()
         .borders(Borders::ALL)
@@ -295,7 +280,6 @@ fn draw_status_controls(frame: &mut Frame, area: Rect, app: &App) {
         width: area.width.saturating_sub(2),
         height: area.height.saturating_sub(2),
     };
-
     if inner.width < 10 || inner.height < 1 {
         return;
     }
@@ -311,7 +295,6 @@ fn draw_status_controls(frame: &mut Frame, area: Rect, app: &App) {
         FocusArea::MonitorList => "Focus: Monitors",
         FocusArea::VcpFeatures => "Focus: Controls",
     };
-
     let status_line = Line::from(vec![
         Span::styled(
             app.status_message.clone(),
@@ -330,7 +313,6 @@ fn draw_status_controls(frame: &mut Frame, area: Rect, app: &App) {
         ),
     ]);
     frame.render_widget(Paragraph::new(status_line), chunks[0]);
-
     if chunks.len() > 1 {
         let help_line = Line::from(vec![
             Span::styled("↑/↓", Style::default().fg(Color::Yellow)),
@@ -344,7 +326,6 @@ fn draw_status_controls(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled("q", Style::default().fg(Color::Yellow)),
             Span::raw(" Quit"),
         ]);
-
         frame.render_widget(
             Paragraph::new(help_line).wrap(Wrap { trim: true }),
             chunks[1],

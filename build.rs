@@ -19,6 +19,7 @@ struct Profile {
     pnp: String,
     name: String,
     overrides: Vec<Override>,
+    includes: Vec<String>,
 }
 
 fn parse_hex(s: &str) -> Result<u16, ()> {
@@ -137,20 +138,14 @@ fn main() {
                                 .attribute("name")
                                 .unwrap_or(&pnp)
                                 .to_string();
-                            let mut overrides = extract_overrides(&doc);
+                            let overrides = extract_overrides(&doc);
 
-                            // Resolve <include> tags recursively
+                            // Extract include chain
+                            let mut includes = Vec::new();
                             for node in doc.descendants() {
                                 if node.tag_name().name() == "include" {
                                     if let Some(file) = node.attribute("file") {
-                                        let inc_path = monitor_dir.join(format!("{}.xml", file));
-                                        if inc_path.exists() {
-                                            if let Ok(inc_xml) = fs::read_to_string(&inc_path) {
-                                                if let Ok(inc_doc) = Document::parse(&inc_xml) {
-                                                    overrides.extend(extract_overrides(&inc_doc));
-                                                }
-                                            }
-                                        }
+                                        includes.push(file.to_string());
                                     }
                                 }
                             }
@@ -158,6 +153,7 @@ fn main() {
                                 pnp,
                                 name: mon_name,
                                 overrides,
+                                includes,
                             });
                         }
                     }
@@ -180,21 +176,19 @@ fn main() {
     writeln!(f, "];\n").unwrap();
 
     writeln!(f, "#[allow(dead_code)] pub struct ProfileControlOverride {{ pub control_id: &'static str, pub address_override: Option<u8>, pub values: &'static [(u16, &'static str)] }}").unwrap();
-    writeln!(f, "#[allow(dead_code)] pub struct MonitorProfile {{ pub pnp_name: &'static str, pub display_name: &'static str, pub overrides: &'static [ProfileControlOverride] }}").unwrap();
+    writeln!(f, "#[allow(dead_code)] pub struct MonitorProfile {{ pub pnp_name: &'static str, pub display_name: &'static str, pub overrides: &'static [ProfileControlOverride], pub includes: &'static [&'static str] }}").unwrap();
     writeln!(f, "pub const MONITOR_PROFILES: &[MonitorProfile] = &[").unwrap();
     for prof in &profiles {
         let overrides_str: Vec<String> = prof.overrides.iter().map(|o| {
             let vals_str: Vec<String> = o.vals.iter().map(|(v, n)| format!("(0x{:04X}, \"{}\")", v, n.replace("\"", "\\\""))).collect();
             format!("ProfileControlOverride {{ control_id: \"{}\", address_override: {}, values: &[{}] }}", o.id.replace("\"", "\\\""), match o.addr { Some(a) => format!("Some(0x{:02X})", a), None => "None".to_string() }, vals_str.join(", "))
         }).collect();
-        writeln!(
-            f,
-            "    MonitorProfile {{ pnp_name: \"{}\", display_name: \"{}\", overrides: &[{}] }},",
-            prof.pnp.replace("\"", "\\\""),
-            prof.name.replace("\"", "\\\""),
-            overrides_str.join(",\n        ")
-        )
-        .unwrap();
+        let includes_str: Vec<String> = prof
+            .includes
+            .iter()
+            .map(|s| format!("\"{}\"", s.replace("\"", "\\\"")))
+            .collect();
+        writeln!(f, "    MonitorProfile {{ pnp_name: \"{}\", display_name: \"{}\", overrides: &[{}], includes: &[{}] }},", prof.pnp.replace("\"", "\\\""), prof.name.replace("\"", "\\\""), overrides_str.join(",\n        "), includes_str.join(", ")).unwrap();
     }
     writeln!(f, "];\n").unwrap();
 }

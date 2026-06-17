@@ -21,12 +21,12 @@ impl DdcController {
             .into_iter()
             .map(|d| {
                 let name = d.info.model_name.clone().unwrap_or_else(|| {
-                    let mut fallback = String::from("Unknown Monitor ");
+                    let mut fallback = String::from("Unknown Monitor");
                     if let Some(mfr) = &d.info.manufacturer_id {
-                        fallback.push_str(&format!("({}) ", mfr));
+                        fallback.push_str(&format!(" ({})", mfr));
                     }
-                    if fallback == "Unknown Monitor " {
-                        fallback = format!("Monitor [{}] ", d.info.id);
+                    if fallback == "Unknown Monitor" {
+                        fallback = format!("Monitor [{}]", d.info.id);
                     }
                     fallback
                 });
@@ -41,31 +41,32 @@ impl DdcController {
             .collect())
     }
 
-    pub fn read_feature(&self, monitor_id: &str, code: FeatureCode) -> Result<(u16, u16)> {
+    // Enumerate once and return the raw Display object to reuse its handle
+    pub fn find_display(&self, monitor_id: &str) -> Result<Display> {
         let displays = Display::enumerate();
-        let mut display = displays
+        displays
             .into_iter()
             .find(|d| d.info.id == monitor_id)
-            .context("Monitor not found ")?;
+            .context("Monitor not found")
+    }
+
+    // Take the whole Display struct to avoid trait object associated type issues
+    pub fn read_feature(display: &mut Display, code: FeatureCode) -> Result<(u16, u16)> {
         let value = display
             .handle
             .get_vcp_feature(code)
-            .with_context(|| format!("Failed to read VCP feature {} ", code))?;
+            .with_context(|| format!("Failed to read VCP feature {}", code))?;
+
         let max = (u16::from(value.mh) << 8) | u16::from(value.ml);
         let cur = (u16::from(value.sh) << 8) | u16::from(value.sl);
         Ok((cur, max))
     }
 
-    pub fn write_feature(&self, monitor_id: &str, code: FeatureCode, value: u16) -> Result<()> {
-        let displays = Display::enumerate();
-        let mut display = displays
-            .into_iter()
-            .find(|d| d.info.id == monitor_id)
-            .context("Monitor not found ")?;
+    pub fn write_feature(display: &mut Display, code: FeatureCode, value: u16) -> Result<()> {
         display
             .handle
             .set_vcp_feature(code, value)
-            .with_context(|| format!("Failed to write VCP feature {} ", code))?;
+            .with_context(|| format!("Failed to write VCP feature {}", code))?;
         Ok(())
     }
 }
