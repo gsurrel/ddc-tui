@@ -1,0 +1,3 @@
+[submodule "ddccontrol-db"]
+	path = ddccontrol-db
+	url = https://github.com/ddccontrol/ddccontrol-db

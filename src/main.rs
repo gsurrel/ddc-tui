@@ -1,4 +1,5 @@
 mod app;
+mod db;
 mod ddc;
 mod ui;
 
