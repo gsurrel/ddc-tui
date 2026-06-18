@@ -1,0 +1,92 @@
+name: Update ddccontrol-db
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Use a PAT (RELEASE_PAT secret) instead of the default GITHUB_TOKEN.
+      # Pushes authenticated with GITHUB_TOKEN are not allowed to trigger
+      # other workflows, so the tag pushed by `cargo release` below would
+      # never start release.yml unless we use a real token here.
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install tools
+        run: |
+          cargo install cargo-release --locked
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Check upstream submodule revision
+        id: check
+        run: |
+          CURRENT=$(git -C ddccontrol-db rev-parse HEAD)
+
+          REMOTE=$(git ls-remote \
+            https://github.com/ddccontrol/ddccontrol-db.git \
+            refs/heads/master \
+            | cut -f1)
+
+          echo "current=$CURRENT"
+          echo "remote=$REMOTE"
+
+          if [ "$CURRENT" = "$REMOTE" ]; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update submodule
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git submodule update --remote
+
+      - name: Determine release level
+        if: steps.check.outputs.changed == 'true'
+        id: bump
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[0].version')
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+          if [ "$MAJOR" = "0" ]; then
+            echo "level=patch" >> $GITHUB_OUTPUT
+          else
+            echo "level=minor" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit submodule update
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git add ddccontrol-db
+          git commit -m "chore: update ddccontrol-db submodule"
+
+      - name: Create release commit + tag
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          cargo release \
+            ${{ steps.bump.outputs.level }} \
+            --execute \
+            --no-confirm

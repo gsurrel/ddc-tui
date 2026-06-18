@@ -3,6 +3,12 @@ name = "ddc-tui"
 version = "0.1.0"
 edition = "2024"
 
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
 [dependencies]
 anyhow = "^1.0"
 clap = { version = "^4.6", features = ["derive"] }
@@ -13,3 +19,11 @@ strsim = "^0.11"
 
 [build-dependencies]
 roxmltree = "^0.21"
+
+[package.metadata.release]
+publish = false
+tag = true
+push = true
+tag-name = "v{{version}}"
+tag-message = "Release {{version}}"
+pre-release-commit-message = "chore: release {{version}}"
