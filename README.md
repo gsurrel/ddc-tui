@@ -2,6 +2,8 @@
 
 A fast, keyboard-driven Terminal User Interface (TUI) for controlling external monitors via **DDC/CI** (Display Data Channel Command Interface). 
 
+![Screenshot of ddc-tui with the profile override shown](screenshot.png)
+
 Built with Rust and [Ratatui](https://ratatui.rs/), `ddc-tui` leverages the community-maintained [`ddccontrol-db`](https://github.com/ddccontrol/ddccontrol-db) to automatically map cryptic VCP (Virtual Control Panel) hex codes to human-readable names and discrete options.
 
 > [!NOTE]
@@ -80,6 +82,23 @@ For those interested in the rust-jargon and architecture:
 - **`ddc-hi`**: Used for cross-platform DDC/CI communication. It abstracts away the differences between Linux `i2c-dev` and Windows/DP-Aux APIs.
 - **Strictly Typed Features**: The `FeatureType` enum strictly types VCP codes into `Continuous`, `Discrete`, and `Action` variants at probe-time. This allows the UI layer (`ui.rs`) to remain completely "dumb" and data-driven, simply rendering whatever the App layer provides.
 - **Smart Scrolling**: The TUI implements a bounded, centered scrolling algorithm for the control list to ensure the selected item remains in the middle of the viewport without overscrolling.
+
+## Competition
+
+Of course there are other tools doing similar things:
+
+### macOS
+
+- **[MonitorControl](https://github.com/MonitorControl/MonitorControl)** — A macOS utility that lets you adjust external monitor brightness, contrast, and volume using DDC/CI. Integrates with macOS keyboard brightness keys.
+
+### Linux
+
+- **[ddccontrol](https://github.com/ddccontrol/ddccontrol)** — A Linux utility suite providing full DDC/CI control. Includes:
+    - `ddccontrol`: command‑line tool for brightness, contrast, RGB.
+    - `gddccontrol`: graphical frontend.
+
+- **[GNOME Shell extension: Brightness control using ddcutil](https://extensions.gnome.org/extension/2645/brightness-control-using-ddcutil/)** — Extension that add brightness and contrast sliders to the GNOME UI using DDC/CI. There are many other extensions doing it if that one does not work for you.
+
 
 ## License
 
