@@ -41,22 +41,19 @@ impl DdcController {
             .collect())
     }
 
-    // Enumerate once and return the raw Display object to reuse its handle
+    /// Enumerate once and return the raw Display object to reuse its handle
     pub fn find_display(&self, monitor_id: &str) -> Result<Display> {
-        let displays = Display::enumerate();
-        displays
+        Display::enumerate()
             .into_iter()
             .find(|d| d.info.id == monitor_id)
             .context("Monitor not found")
     }
 
-    // Take the whole Display struct to avoid trait object associated type issues
     pub fn read_feature(display: &mut Display, code: FeatureCode) -> Result<(u16, u16)> {
         let value = display
             .handle
             .get_vcp_feature(code)
-            .with_context(|| format!("Failed to read VCP feature {}", code))?;
-
+            .with_context(|| format!("Failed to read VCP {}", code))?;
         let max = (u16::from(value.mh) << 8) | u16::from(value.ml);
         let cur = (u16::from(value.sh) << 8) | u16::from(value.sl);
         Ok((cur, max))
@@ -66,7 +63,7 @@ impl DdcController {
         display
             .handle
             .set_vcp_feature(code, value)
-            .with_context(|| format!("Failed to write VCP feature {}", code))?;
+            .with_context(|| format!("Failed to write VCP {}", code))?;
         Ok(())
     }
 }

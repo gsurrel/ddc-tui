@@ -39,9 +39,9 @@ fn extract_overrides(doc: &Document) -> Vec<Override> {
     for node in doc.descendants() {
         if node.tag_name().name() == "control" {
             let id = node.attribute("id").unwrap_or("");
-            let addr_str = node.attribute("address").unwrap_or("");
-            let addr = parse_hex(addr_str).ok().map(|a| a as u8);
-
+            let addr = parse_hex(node.attribute("address").unwrap_or(""))
+                .ok()
+                .map(|a| a as u8);
             let mut vals = Vec::new();
             for v in node.children() {
                 if v.tag_name().name() == "value" {
@@ -96,9 +96,8 @@ fn main() {
                 if node.tag_name().name() == "control" {
                     let id = node.attribute("id").unwrap_or("");
                     let name = node.attribute("name").unwrap_or(id);
-                    let addr_str = node.attribute("address").unwrap_or("");
                     let typ = node.attribute("type").unwrap_or("value");
-                    if let Ok(addr) = parse_hex(addr_str) {
+                    if let Ok(addr) = parse_hex(node.attribute("address").unwrap_or("")) {
                         let mut vals = Vec::new();
                         for v in node.children() {
                             if v.tag_name().name() == "value" {

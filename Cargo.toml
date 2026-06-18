@@ -1,5 +1,5 @@
 [package]
-name = "display-data-channel"
+name = "ddc-tui"
 version = "0.1.0"
 edition = "2024"
 
@@ -9,6 +9,7 @@ clap = { version = "^4.6", features = ["derive"] }
 crossterm = "^0.29"
 ddc-hi = "^0.4"
 ratatui = "^0.30"
+strsim = "^0.11"
 
 [build-dependencies]
-roxmltree = "0.21.1"
+roxmltree = "^0.21"

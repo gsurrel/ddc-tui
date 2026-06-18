@@ -445,6 +445,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ddc-tui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "crossterm",
+ "ddc-hi",
+ "ratatui",
+ "roxmltree",
+ "strsim",
+]
+
+[[package]]
 name = "ddc-winapi"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -497,18 +510,6 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer",
  "crypto-common",
-]
-
-[[package]]
-name = "display-data-channel"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "crossterm",
- "ddc-hi",
- "ratatui",
- "roxmltree",
 ]
 
 [[package]]
